@@ -96,7 +96,10 @@ pub(crate) fn sign_with_agent(
     }
 }
 
-fn sign_typed_data<T: Eip712>(payload: &T, wallet: &LocalWallet) -> Result<Signature> {
+fn sign_typed_data<T: Eip712, D>(payload: &T, wallet: &Wallet<D>) -> Result<Signature>
+where
+    D: PrehashSigner<(RecoverableSignature, RecoveryId)>,
+{
     let encoded = payload
         .encode_eip712()
         .map_err(|e| Error::Eip712(e.to_string()))?;
