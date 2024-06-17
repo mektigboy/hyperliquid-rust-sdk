@@ -3,7 +3,6 @@
 use ethers::prelude::k256::{
     elliptic_curve::generic_array::GenericArray,
     sha2::{
-        self,
         digest::{Output, OutputSizeUser},
         Digest,
     },
@@ -14,8 +13,6 @@ use ethers::{
     },
     types::H256,
 };
-
-pub(crate) type Sha256Proxy = ProxyDigest<sha2::Sha256>;
 
 #[derive(Clone)]
 pub(crate) enum ProxyDigest<D: Digest> {
