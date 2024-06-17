@@ -1,19 +1,54 @@
 use crate::{consts::*, prelude::*, Error};
 use chrono::prelude::Utc;
+use lazy_static::lazy_static;
+use log::info;
 use rand::{thread_rng, Rng};
+use std::sync::atomic::{AtomicU64, Ordering};
+use uuid::Uuid;
 
-pub(crate) fn now_timestamp_ms() -> u64 {
+fn now_timestamp_ms() -> u64 {
     let now = Utc::now();
     now.timestamp_millis() as u64
 }
 
-pub(crate) fn float_to_int_for_hashing(num: f64) -> u64 {
-    (num * 100_000_000.0).round() as u64
+pub(crate) fn next_nonce() -> u64 {
+    let nonce = CUR_NONCE.fetch_add(1, Ordering::Relaxed);
+    let now_ms = now_timestamp_ms();
+    if nonce > now_ms + 1000 {
+        info!("nonce progressed too far ahead {nonce} {now_ms}");
+    }
+    // more than 300 seconds behind
+    if nonce + 300000 < now_ms {
+        CUR_NONCE.fetch_max(now_ms, Ordering::Relaxed);
+    }
+    nonce
 }
 
-pub(crate) fn float_to_string_for_hashing(num: f64) -> String {
-    let num = format!("{:0>9}", float_to_int_for_hashing(num).to_string());
-    format!("{}.{}", &num[..num.len() - 8], &num[num.len() - 8..])
+pub(crate) const WIRE_DECIMALS: u8 = 8;
+
+pub(crate) fn float_to_string_for_hashing(x: f64) -> String {
+    let mut x = format!("{:.*}", WIRE_DECIMALS.into(), x);
+    while x.ends_with('0') {
+        x.pop();
+    }
+    if x.ends_with('.') {
+        x.pop();
+    }
+    if x == "-0" {
+        "0".to_string()
+    } else {
+        x
+    }
+}
+
+pub(crate) fn uuid_to_hex_string(uuid: Uuid) -> String {
+    let hex_string = uuid
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect::<Vec<String>>()
+        .join("");
+    format!("0x{}", hex_string)
 }
 
 pub(crate) fn generate_random_key() -> Result<[u8; 32]> {
@@ -41,13 +76,6 @@ pub fn bps_diff(x: f64, y: f64) -> u16 {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub(crate) enum EthChain {
-    Localhost,
-    Arbitrum,
-    ArbitrumGoerli,
-}
-
 #[derive(Copy, Clone)]
 pub enum BaseUrl {
     Localhost,
@@ -62,5 +90,55 @@ impl BaseUrl {
             BaseUrl::Mainnet => MAINNET_API_URL.to_string(),
             BaseUrl::Testnet => TESTNET_API_URL.to_string(),
         }
+    }
+}
+
+lazy_static! {
+    static ref CUR_NONCE: AtomicU64 = AtomicU64::new(now_timestamp_ms());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn float_to_string_for_hashing_test() {
+        assert_eq!(float_to_string_for_hashing(0.), "0".to_string());
+        assert_eq!(float_to_string_for_hashing(-0.), "0".to_string());
+        assert_eq!(float_to_string_for_hashing(-0.0000), "0".to_string());
+        assert_eq!(
+            float_to_string_for_hashing(0.00076000),
+            "0.00076".to_string()
+        );
+        assert_eq!(
+            float_to_string_for_hashing(0.00000001),
+            "0.00000001".to_string()
+        );
+        assert_eq!(
+            float_to_string_for_hashing(0.12345678),
+            "0.12345678".to_string()
+        );
+        assert_eq!(
+            float_to_string_for_hashing(87654321.12345678),
+            "87654321.12345678".to_string()
+        );
+        assert_eq!(
+            float_to_string_for_hashing(987654321.00000000),
+            "987654321".to_string()
+        );
+        assert_eq!(
+            float_to_string_for_hashing(87654321.1234),
+            "87654321.1234".to_string()
+        );
+        assert_eq!(float_to_string_for_hashing(0.000760), "0.00076".to_string());
+        assert_eq!(float_to_string_for_hashing(0.00076), "0.00076".to_string());
+        assert_eq!(
+            float_to_string_for_hashing(987654321.0),
+            "987654321".to_string()
+        );
+        assert_eq!(
+            float_to_string_for_hashing(987654321.),
+            "987654321".to_string()
+        );
     }
 }

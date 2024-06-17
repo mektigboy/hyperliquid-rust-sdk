@@ -1,5 +1,4 @@
 use ethers::{
-    abi::AbiEncode,
     core::k256::{
         ecdsa::{signature::hazmat::PrehashSigner, RecoveryId, Signature as RecoverableSignature},
         elliptic_curve::FieldBytes,
@@ -7,105 +6,33 @@ use ethers::{
     },
     signers::{LocalWallet, Wallet},
     types::{transaction::eip712::Eip712, Signature, H256, U256},
-    utils::keccak256,
 };
 
-use crate::{
-    helpers::EthChain,
-    prelude::*,
-    signature::{
-        agent::{l1, mainnet, testnet},
-        usdc_transfer,
-    },
-    Error,
-};
-
-pub(crate) fn keccak(x: impl AbiEncode) -> H256 {
-    keccak256(x.encode()).into()
-}
+use crate::{prelude::*, signature::agent::l1, Error};
 
 pub(crate) fn sign_l1_action(
     wallet: &LocalWallet,
     connection_id: H256,
     is_mainnet: bool,
 ) -> Result<Signature> {
-    sign_with_agent(
+    let source = if is_mainnet { "a" } else { "b" }.to_string();
+    sign_typed_data(
+        &l1::Agent {
+            source,
+            connection_id,
+        },
         wallet,
-        EthChain::Localhost,
-        if is_mainnet { "a" } else { "b" },
-        connection_id,
     )
 }
 
-pub(crate) fn sign_usd_transfer_action(
-    wallet: &LocalWallet,
-    chain_type: EthChain,
-    amount: &str,
-    destination: &str,
-    timestamp: u64,
-) -> Result<Signature> {
-    match chain_type {
-        EthChain::Localhost => Err(Error::ChainNotAllowed),
-        EthChain::Arbitrum => Ok(sign_typed_data(
-            &usdc_transfer::mainnet::UsdTransferSignPayload {
-                destination: destination.to_string(),
-                amount: amount.to_string(),
-                time: timestamp,
-            },
-            wallet,
-        )?),
-        EthChain::ArbitrumGoerli => Ok(sign_typed_data(
-            &usdc_transfer::testnet::UsdTransferSignPayload {
-                destination: destination.to_string(),
-                amount: amount.to_string(),
-                time: timestamp,
-            },
-            wallet,
-        )?),
-    }
-}
-
-pub(crate) fn sign_with_agent(
-    wallet: &LocalWallet,
-    chain_type: EthChain,
-    source: &str,
-    connection_id: H256,
-) -> Result<Signature> {
-    match chain_type {
-        EthChain::Localhost => sign_typed_data(
-            &l1::Agent {
-                source: source.to_string(),
-                connection_id,
-            },
-            wallet,
-        ),
-        EthChain::Arbitrum => sign_typed_data(
-            &mainnet::Agent {
-                source: source.to_string(),
-                connection_id,
-            },
-            wallet,
-        ),
-        EthChain::ArbitrumGoerli => sign_typed_data(
-            &testnet::Agent {
-                source: source.to_string(),
-                connection_id,
-            },
-            wallet,
-        ),
-    }
-}
-
-fn sign_typed_data<T: Eip712, D>(payload: &T, wallet: &Wallet<D>) -> Result<Signature>
+pub(crate) fn sign_typed_data<T: Eip712, D>(payload: &T, wallet: &Wallet<D>) -> Result<Signature>
 where
     D: PrehashSigner<(RecoverableSignature, RecoveryId)>,
 {
     let encoded = payload
         .encode_eip712()
         .map_err(|e| Error::Eip712(e.to_string()))?;
-    let signature = sign_hash(H256::from(encoded), wallet)?;
-
-    Ok(signature)
+    Ok(sign_hash(H256::from(encoded), wallet)?)
 }
 
 fn sign_hash<D>(hash: H256, wallet: &Wallet<D>) -> Result<Signature>
@@ -121,6 +48,7 @@ where
 
     let r_bytes: FieldBytes<Secp256k1> = recoverable_sig.r().into();
     let s_bytes: FieldBytes<Secp256k1> = recoverable_sig.s().into();
+
     let r = U256::from_big_endian(r_bytes.as_slice());
     let s = U256::from_big_endian(s_bytes.as_slice());
 
@@ -130,6 +58,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UsdSend;
     use std::str::FromStr;
 
     fn get_wallet() -> Result<LocalWallet> {
@@ -138,6 +67,7 @@ mod tests {
             .parse::<LocalWallet>()
             .map_err(|e| Error::Wallet(e.to_string()))
     }
+
     #[test]
     fn test_sign_l1_action() -> Result<()> {
         let wallet = get_wallet()?;
@@ -162,15 +92,17 @@ mod tests {
     fn test_sign_usd_transfer_action() -> Result<()> {
         let wallet = get_wallet()?;
 
-        let chain_type = EthChain::ArbitrumGoerli;
-        let amount = "1";
-        let destination = "0x0D1d9635D0640821d15e323ac8AdADfA9c111414";
-        let timestamp = 1690393044548;
+        let usd_send = UsdSend {
+            signature_chain_id: 421614.into(),
+            hyperliquid_chain: "Testnet".to_string(),
+            destination: "0x0D1d9635D0640821d15e323ac8AdADfA9c111414".to_string(),
+            amount: "1".to_string(),
+            time: 1690393044548,
+        };
 
-        let expected_sig = "78f879e7ae6fbc3184dc304317e602507ac562b49ad9a5db120a41ac181b96ba2e8bd7022526a1827cf4b0ba96384d40ec3a5ed4239499c328081f3d0b394bb61b";
+        let expected_sig = "214d507bbdaebba52fa60928f904a8b2df73673e3baba6133d66fe846c7ef70451e82453a6d8db124e7ed6e60fa00d4b7c46e4d96cb2bd61fd81b6e8953cc9d21b";
         assert_eq!(
-            sign_usd_transfer_action(&wallet, chain_type, amount, destination, timestamp)?
-                .to_string(),
+            sign_typed_data(&usd_send, &wallet)?.to_string(),
             expected_sig
         );
         Ok(())

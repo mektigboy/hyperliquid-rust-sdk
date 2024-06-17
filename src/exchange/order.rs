@@ -1,10 +1,11 @@
 use crate::{
     errors::Error,
-    helpers::{float_to_int_for_hashing, float_to_string_for_hashing},
+    helpers::{float_to_string_for_hashing, uuid_to_hex_string},
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Limit {
@@ -29,12 +30,20 @@ pub enum Order {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderRequest {
+    #[serde(rename = "a", alias = "asset")]
     pub asset: u32,
+    #[serde(rename = "b", alias = "isBuy")]
     pub is_buy: bool,
-    pub reduce_only: bool,
+    #[serde(rename = "p", alias = "limitPx")]
     pub limit_px: String,
+    #[serde(rename = "s", alias = "sz")]
     pub sz: String,
+    #[serde(rename = "r", alias = "reduceOnly", default)]
+    pub reduce_only: bool,
+    #[serde(rename = "t", alias = "orderType")]
     pub order_type: Order,
+    #[serde(rename = "c", alias = "cloid", skip_serializing_if = "Option::is_none")]
+    pub cloid: Option<String>,
 }
 
 pub struct ClientLimit {
@@ -57,6 +66,7 @@ pub struct ClientOrderRequest {
     pub reduce_only: bool,
     pub limit_px: f64,
     pub sz: f64,
+    pub cloid: Option<Uuid>,
     pub order_type: ClientOrder,
 }
 
@@ -72,6 +82,8 @@ impl ClientOrderRequest {
         };
         let &asset = coin_to_asset.get(&self.asset).ok_or(Error::AssetNotFound)?;
 
+        let cloid = self.cloid.map(uuid_to_hex_string);
+
         Ok(OrderRequest {
             asset,
             is_buy: self.is_buy,
@@ -79,42 +91,7 @@ impl ClientOrderRequest {
             limit_px: float_to_string_for_hashing(self.limit_px),
             sz: float_to_string_for_hashing(self.sz),
             order_type,
+            cloid,
         })
-    }
-    pub(crate) fn create_hashable_tuple(
-        &self,
-        coin_to_asset: &HashMap<String, u32>,
-    ) -> Result<(u32, bool, u64, u64, bool, u8, u64)> {
-        let hashed_order_type = self.order_type.get_type()?;
-        let &asset = coin_to_asset.get(&self.asset).ok_or(Error::AssetNotFound)?;
-        Ok((
-            asset,
-            self.is_buy,
-            float_to_int_for_hashing(self.limit_px),
-            float_to_int_for_hashing(self.sz),
-            self.reduce_only,
-            hashed_order_type.0,
-            hashed_order_type.1,
-        ))
-    }
-}
-
-impl ClientOrder {
-    pub(crate) fn get_type(&self) -> Result<(u8, u64)> {
-        match self {
-            ClientOrder::Limit(limit) => match limit.tif.as_str() {
-                "Gtc" => Ok((2, 0)),
-                "Alo" => Ok((1, 0)),
-                "Ioc" => Ok((3, 0)),
-                _ => Err(Error::OrderTypeNotFound),
-            },
-            ClientOrder::Trigger(trigger) => match (trigger.is_market, trigger.tpsl.as_str()) {
-                (true, "tp") => Ok((4, float_to_int_for_hashing(trigger.trigger_px))),
-                (false, "tp") => Ok((5, float_to_int_for_hashing(trigger.trigger_px))),
-                (true, "sl") => Ok((6, float_to_int_for_hashing(trigger.trigger_px))),
-                (false, "sl") => Ok((7, float_to_int_for_hashing(trigger.trigger_px))),
-                _ => Err(Error::OrderTypeNotFound),
-            },
-        }
     }
 }
