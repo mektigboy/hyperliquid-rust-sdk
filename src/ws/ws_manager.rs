@@ -25,6 +25,8 @@ struct SubscriptionData {
     sending_channel: UnboundedSender<Message>,
     subscription_id: u32,
 }
+
+#[derive(Debug)]
 pub(crate) struct WsManager {
     writer: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, protocol::Message>,
     subscriptions: Arc<Mutex<HashMap<String, Vec<SubscriptionData>>>>,
