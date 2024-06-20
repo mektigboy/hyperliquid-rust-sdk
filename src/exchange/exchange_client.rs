@@ -30,6 +30,7 @@ use std::collections::HashMap;
 
 use super::cancel::ClientCancelRequestCloid;
 
+#[derive(Debug, Clone)]
 pub struct ExchangeClient {
     pub http_client: HttpClient,
     pub wallet: LocalWallet,

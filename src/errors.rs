@@ -53,6 +53,8 @@ pub enum Error {
     PrivateKeyParse(String),
     #[error("Cannot subscribe to multiple user events")]
     UserEvents,
+    #[error("Error signing prehash: {0:?}")]
+    PrehashSigner(String),
     #[error("Rmp parse error: {0:?}")]
     RmpParse(String),
     #[error("Invalid input number")]

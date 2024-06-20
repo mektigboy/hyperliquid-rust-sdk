@@ -1,10 +1,14 @@
 use ethers::{
-    core::k256::{elliptic_curve::FieldBytes, Secp256k1},
-    signers::LocalWallet,
+    core::k256::{
+        ecdsa::{signature::hazmat::PrehashSigner, RecoveryId, Signature as RecoverableSignature},
+        elliptic_curve::FieldBytes,
+        Secp256k1,
+    },
+    signers::{LocalWallet, Wallet},
     types::{transaction::eip712::Eip712, Signature, H256, U256},
 };
 
-use crate::{prelude::*, proxy_digest::Sha256Proxy, signature::agent::l1, Error};
+use crate::{prelude::*, signature::agent::l1, Error};
 
 pub(crate) fn sign_l1_action(
     wallet: &LocalWallet,
@@ -21,24 +25,30 @@ pub(crate) fn sign_l1_action(
     )
 }
 
-pub(crate) fn sign_typed_data<T: Eip712>(payload: &T, wallet: &LocalWallet) -> Result<Signature> {
+pub(crate) fn sign_typed_data<T: Eip712, D>(payload: &T, wallet: &Wallet<D>) -> Result<Signature>
+where
+    D: PrehashSigner<(RecoverableSignature, RecoveryId)>,
+{
     let encoded = payload
         .encode_eip712()
         .map_err(|e| Error::Eip712(e.to_string()))?;
-
-    sign_hash(H256::from(encoded), wallet)
+    Ok(sign_hash(H256::from(encoded), wallet)?)
 }
 
-fn sign_hash(hash: H256, wallet: &LocalWallet) -> Result<Signature> {
-    let (sig, rec_id) = wallet
+fn sign_hash<D>(hash: H256, wallet: &Wallet<D>) -> Result<Signature>
+where
+    D: PrehashSigner<(RecoverableSignature, RecoveryId)>,
+{
+    let (recoverable_sig, recovery_id) = wallet
         .signer()
-        .sign_digest_recoverable(Sha256Proxy::from(hash))
-        .map_err(|e| Error::SignatureFailure(e.to_string()))?;
+        .sign_prehash(hash.as_ref())
+        .map_err(|e| Error::PrehashSigner(e.to_string()))?;
 
-    let v = u8::from(rec_id) as u64 + 27;
+    let v = u8::from(recovery_id) as u64 + 27;
 
-    let r_bytes: FieldBytes<Secp256k1> = sig.r().into();
-    let s_bytes: FieldBytes<Secp256k1> = sig.s().into();
+    let r_bytes: FieldBytes<Secp256k1> = recoverable_sig.r().into();
+    let s_bytes: FieldBytes<Secp256k1> = recoverable_sig.s().into();
+
     let r = U256::from_big_endian(r_bytes.as_slice());
     let s = U256::from_big_endian(s_bytes.as_slice());
 

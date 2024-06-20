@@ -64,9 +64,10 @@ pub enum InfoRequest {
     },
 }
 
+#[derive(Debug, Clone)]
 pub struct InfoClient {
     pub http_client: HttpClient,
-    pub(crate) ws_manager: Option<WsManager>,
+    // pub(crate) ws_manager: Option<WsManager>,
 }
 
 impl InfoClient {
@@ -76,44 +77,44 @@ impl InfoClient {
 
         Ok(InfoClient {
             http_client: HttpClient { client, base_url },
-            ws_manager: None,
+            // ws_manager: None,
         })
     }
 
-    pub async fn subscribe(
-        &mut self,
-        subscription: Subscription,
-        sender_channel: UnboundedSender<Message>,
-    ) -> Result<u32> {
-        if self.ws_manager.is_none() {
-            let ws_manager =
-                WsManager::new(format!("ws{}/ws", &self.http_client.base_url[4..])).await?;
-            self.ws_manager = Some(ws_manager);
-        }
+    // pub async fn subscribe(
+    //     &mut self,
+    //     subscription: Subscription,
+    //     sender_channel: UnboundedSender<Message>,
+    // ) -> Result<u32> {
+    //     if self.ws_manager.is_none() {
+    //         let ws_manager =
+    //             WsManager::new(format!("ws{}/ws", &self.http_client.base_url[4..])).await?;
+    //         self.ws_manager = Some(ws_manager);
+    //     }
 
-        let identifier =
-            serde_json::to_string(&subscription).map_err(|e| Error::JsonParse(e.to_string()))?;
+    //     let identifier =
+    //         serde_json::to_string(&subscription).map_err(|e| Error::JsonParse(e.to_string()))?;
 
-        self.ws_manager
-            .as_mut()
-            .ok_or(Error::WsManagerNotFound)?
-            .add_subscription(identifier, sender_channel)
-            .await
-    }
+    //     self.ws_manager
+    //         .as_mut()
+    //         .ok_or(Error::WsManagerNotFound)?
+    //         .add_subscription(identifier, sender_channel)
+    //         .await
+    // }
 
-    pub async fn unsubscribe(&mut self, subscription_id: u32) -> Result<()> {
-        if self.ws_manager.is_none() {
-            let ws_manager =
-                WsManager::new(format!("ws{}/ws", &self.http_client.base_url[4..])).await?;
-            self.ws_manager = Some(ws_manager);
-        }
+    // pub async fn unsubscribe(&mut self, subscription_id: u32) -> Result<()> {
+    //     if self.ws_manager.is_none() {
+    //         let ws_manager =
+    //             WsManager::new(format!("ws{}/ws", &self.http_client.base_url[4..])).await?;
+    //         self.ws_manager = Some(ws_manager);
+    //     }
 
-        self.ws_manager
-            .as_mut()
-            .ok_or(Error::WsManagerNotFound)?
-            .remove_subscription(subscription_id)
-            .await
-    }
+    //     self.ws_manager
+    //         .as_mut()
+    //         .ok_or(Error::WsManagerNotFound)?
+    //         .remove_subscription(subscription_id)
+    //         .await
+    // }
 
     pub async fn open_orders(&self, address: H160) -> Result<Vec<OpenOrdersResponse>> {
         let input = InfoRequest::OpenOrders { user: address };
